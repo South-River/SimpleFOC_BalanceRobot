@@ -2,11 +2,14 @@
 #include <Adafruit_Sensor.h>
 
 #include <IMU.h>
-#include <filter.h>
+#include <Filter.h>
 #include <BalanceController.h>
 
 #include "Status.h"
 #include "Output.h"
+
+float velocity = 0.f;             //m/s
+float angular_velocity = 0.f;     //rad/s
 
 /* I2C cfgs */
 TwoWire I2C0 = TwoWire(0);
@@ -53,11 +56,11 @@ TaskHandle_t Task1;
 #define TASK_PRIO1 (10)
 
 TaskHandle_t Task2;
-#define TASK_STACK2 (4*1024)
+#define TASK_STACK2 (2*1024)
 #define TASK_PRIO2 (5)
 
 TaskHandle_t Task3;
-#define TASK_STACK3 (4*1024)
+#define TASK_STACK3 (2*1024)
 #define TASK_PRIO3 (1)
 
 void task0(void *pvParameters);
@@ -75,15 +78,14 @@ void setup()
 
   /* maximize cpu frequency */
   setCpuFrequencyMhz(240);
-  Serial.print("CPU Frequency: ");
-  Serial.println(getCpuFrequencyMhz());
+  Serial.println("CPU Frequency: "+String(getCpuFrequencyMhz()));
 
   /* device init */
   IMUInit(I2C0);
 
   /* create tasks */
   xTaskCreatePinnedToCore(task0, "Task_IMU", TASK_STACK0, NULL, TASK_PRIO0, &Task_0, CORE_0);
-  xTaskCreatePinnedToCore(task1, "Task_Controller", TASK_STACK1, NULL, TASK_PRIO1, &Task_1, CORE_1);
+  xTaskCreatePinnedToCore(task1, "Task_FSM", TASK_STACK1, NULL, TASK_PRIO1, &Task_1, CORE_1);
   // xTaskCreatePinnedToCore(task2, "Task_Msg", TASK_STACK2, NULL, TASK_PRIO2, &Task_2, CORE_0);
   // xTaskCreatePinnedToCore(task3, "Task_OLED", TASK_STACK3, NULL, TASK_PRIO3, &Task_3, CORE_1);
 }
@@ -112,7 +114,13 @@ void task1(void *pvParameters)
 
   while(true)
   {
-    robot_angle = imu.pitch*IMU::RAD2ANG;
+    robot_angle = imu.pitch;
+    target_velocity = velocity;
+    
+    if(Serial.available())
+    {
+      updateParam();
+    }
     
     if(robot_angle<40&&robot_angle>-40)
     {
@@ -187,11 +195,6 @@ void IMUUpdate()
   {
     // delta = micros() - IMU_timer ;
     IMU_timer = micros(); /* imu get data */
-
-    if (Serial.available())
-    {
-      updateParam();
-    }
 
     ax = axFilter.output(); axFilter.reset();
     ay = ayFilter.output(); ayFilter.reset();
