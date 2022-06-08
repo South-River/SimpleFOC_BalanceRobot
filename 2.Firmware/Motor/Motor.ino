@@ -33,7 +33,7 @@ void task1(void *pvParameters);
 /* function prototype declaration */
 void MotorInit();
 void MotorRun();
-void RcvForce(float &l_force, float &r_force);
+void RcvForce();
 
 /* main function */
 void setup()
@@ -61,7 +61,7 @@ void task0(void *pvParameters)
 {
     while(true)
     {
-        MotorRun(l_force, r_force);
+        MotorRun();
     }
 }
 
@@ -71,4 +71,4 @@ void MotorInit(){}
 
 void MotorRun(){}
 
-void RcvForce(float &l_force, float &r_force);
+void RcvForce(){}

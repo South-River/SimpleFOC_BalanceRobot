@@ -2,6 +2,7 @@
 #define OUTPUT_H
 
 #include <Arduino.h>
+#include <IMU.h>
 
 void printRPY(const IMU::IMU &imu);
 

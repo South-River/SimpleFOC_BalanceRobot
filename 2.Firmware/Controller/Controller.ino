@@ -25,6 +25,13 @@ Adafruit_MPU6050 mpu;
 /* imu vars */
 float sample_freq = 1000.f;
 IMU::IMU_6DOF imu(sample_freq, IMU::MAHONY);
+unsigned long IMU_timer;
+
+float ax = 0.f, ay = 0.f, az = 0.f;
+float gx = 0.f, gy = 0.f, gz = 0.f;
+
+Filter::MeanFilter axFilter, ayFilter, azFilter;
+Filter::FOLPF gxFilter, gyFilter, gzFilter;
 
 /* controller vars */
 BalanceController::BalanceController balance_controller;
@@ -85,14 +92,8 @@ void loop(){}
 
 void task0(void *pvParameters)
 {
-  float ax = 0.f, ay = 0.f, az = 0.f;
-  float gx = 0.f, gy = 0.f, gz = 0.f;
+  IMU_timer = micros();
 
-  Filter::MeanFilter axFilter, ayFilter, azFilter;
-  Filter::FOLPF gxFilter, gyFilter, gzFilter;
-
-  unsigned long IMU_timer = micros();
-  
   while(true)
   {
     IMUUpdate();
@@ -182,7 +183,7 @@ void IMUUpdate()
   gyFilter.input(g.gyro.y);
   gzFilter.input(g.gyro.z);
 
-  if (micros() - IMU_timer >= 1e6 * 1.f / sample_freq || micros() < IMU_timer)
+  if ((micros() - IMU_timer >= (1e6 * 1.f) / sample_freq) || micros() < IMU_timer)
   {
     // delta = micros() - IMU_timer ;
     IMU_timer = micros(); /* imu get data */
