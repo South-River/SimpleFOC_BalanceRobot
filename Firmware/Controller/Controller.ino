@@ -1,34 +1,34 @@
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
-// #include <IMU.h>
+#include <SPI.h>
+
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#include <BMI085.h>
+#include <IMU.h>
 #include <Filter.h>
 #include <BalanceController.h>
 
 #include "Status.h"
 #include "Output.h"
+#include "Config.h"
+#include "Bitmap.h"
 
-float velocity = 0.f;
-float angular_velocity = 0.f;
+float velocity = 0.f;           // m/s
+float angular_velocity = 0.f;   // rad/s
 
-/* Serial cfgs */
-#define SERIAL0_TX (44)
-#define SERIAL0_RX (43)
-#define SERIAL1_TX (42)
-#define SERIAL1_RX (41)
+/* SPI cfgs */
+SPIClass hspi(HSPI);
 
-/* I2C cfgs */
-TwoWire I2C0 = TwoWire(0);
-
-#define I2C0_SDA (38)
-#define I2C0_SCL (39)
-
-/* mpu6050 */
-Adafruit_MPU6050 mpu;
+/* accel object */
+BMI085Accel accel(hspi, HSPI_CS0);
+/* gyro object */
+BMI085Gyro gyro(hspi, HSPI_CS1);
 
 /* imu vars */
 float sample_freq = 1000.f;
 IMU::IMU_6DOF imu(sample_freq, MAHONY);
 unsigned long IMU_timer;
+unsigned long delta;
 
 float ax = 0.f, ay = 0.f, az = 0.f;
 float gx = 0.f, gy = 0.f, gz = 0.f;
@@ -39,8 +39,13 @@ Filter::FOLPF gxFilter, gyFilter, gzFilter;
 /* controller vars */
 BalanceController::BalanceController balance_controller;
 
+/* OLED vars */
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,
+  OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
+
 /* function prototype declaration */
-void IMUInit(TwoWire& Wire);
+void OLEDInit();
+void IMUInit();
 void IMUUpdate();
 void getWheelVel(float &l_velocity, float &r_velocity);
 
@@ -49,11 +54,11 @@ void getWheelVel(float &l_velocity, float &r_velocity);
 #define CORE_1 (1)
 
 TaskHandle_t Task0;
-#define TASK_STACK0 (4*1024)
-#define TASK_PRIO0 (9)
+#define TASK_STACK0 (6*1024)
+#define TASK_PRIO0 (2)
 
 TaskHandle_t Task1;
-#define TASK_STACK1 (4*1024)
+#define TASK_STACK1 (6*1024)
 #define TASK_PRIO1 (10)
 
 TaskHandle_t Task2;
@@ -62,7 +67,7 @@ TaskHandle_t Task2;
 
 TaskHandle_t Task3;
 #define TASK_STACK3 (4*1024)
-#define TASK_PRIO3 (1)
+#define TASK_PRIO3 (5)
 
 void task0(void *pvParameters);
 void task1(void *pvParameters);
@@ -72,23 +77,28 @@ void task3(void *pvParameters);
 void setup()
 { 
   /* USB Serial to print data */
-  Serial.begin(5000000UL, SERIAL_8N1, SERIAL0_TX, SERIAL0_RX);
-  Serial1.begin(5000000UL, SERIAL_8N1, SERIAL1_TX, SERIAL1_RX);
+  Serial.begin(2000000UL, SERIAL_8N1, SERIAL0_TX, SERIAL0_RX);
+  Serial1.begin(2000000UL, SERIAL_8N1, SERIAL1_TX, SERIAL1_RX);
 
-  I2C0.begin(I2C0_SDA, I2C0_SCL, 400000UL);
+  /* SPI init */
+  hspi.begin(HSPI_SCLK, HSPI_MISO, HSPI_MOSI, HSPI_CS0); //SCLK, MISO, MOSI, SS
+  hspi.begin(HSPI_SCLK, HSPI_MISO, HSPI_MOSI, HSPI_CS1); //SCLK, MISO, MOSI, SS
 
   /* maximize cpu frequency */
   setCpuFrequencyMhz(240);
   Serial.println("CPU Frequency: " + String(getCpuFrequencyMhz()));
 
   /* device init */
-  IMUInit(I2C0);
+  OLEDInit();
+  IMUInit();
+
+  delay(1000);
 
   /* create tasks */
   xTaskCreatePinnedToCore(task0, "Task_IMU", TASK_STACK0, NULL, TASK_PRIO0, &Task0, CORE_0);
-  xTaskCreatePinnedToCore(task1, "Task_Controller", TASK_STACK1, NULL, TASK_PRIO1, &Task1, CORE_1);
-  // xTaskCreatePinnedToCore(task2, "Task_Msg", TASK_STACK2, NULL, TASK_PRIO2, &Task2, CORE_0);
-  // xTaskCreatePinnedToCore(task3, "Task_OLED", TASK_STACK3, NULL, TASK_PRIO3, &Task3, CORE_1);
+  xTaskCreatePinnedToCore(task1, "Task_FSM", TASK_STACK1, NULL, TASK_PRIO1, &Task1, CORE_1);
+  // xTaskCreatePinnedToCore(task2, "Task_Msg", TASK_STACK2, NULL, TASK_PRIO2, &Task2, CORE_1);
+  xTaskCreatePinnedToCore(task3, "Task_OLED", TASK_STACK3, NULL, TASK_PRIO3, &Task3, CORE_0);
 }
 
 void loop(){}
@@ -96,10 +106,12 @@ void loop(){}
 void task0(void *pvParameters)
 {
   IMU_timer = micros();
-
+  int cnt=0;
+  unsigned long OLED_timer=micros();
   while(true)
   {
     IMUUpdate();
+    // printRPY(imu);
   }
 }
 
@@ -107,19 +119,22 @@ void task1(void *pvParameters)
 {
   float force = 0.f;
   float l_force = 0.f, r_force = 0.f;
-  float target_velocity = velocity;
-  float target_angle = 0.f;
-  float target_angular_velocity = angular_velocity;
+  float target_velocity = velocity;                   //m/s
+  float target_angle = 0.f;                           //rad
+  float target_angular_velocity = angular_velocity;   //rad/s
   float robot_velocity = 0.f;
   float robot_angle = 0.f;
   float robot_angular_velocity = 0.f;
-  float l_velocity = 0.f, r_velocity = 0.f;
+  float l_velocity = 0.f, r_velocity = 0.f;           //rad/s
 
   float len = 1.f;
 
   String l_force_s="", r_force_s="";
 
   uint8_t status = FALL;
+
+  unsigned long FSM_timer=micros();
+  int FSM_freq=1000;
 
   while(true)
   {
@@ -130,8 +145,14 @@ void task1(void *pvParameters)
 
     getWheelVel(l_velocity, r_velocity);
 
+    if((micros()-FSM_timer)<1e6*1.f/FSM_freq&&(micros()>FSM_timer))
+    {
+      continue;
+    }
+    FSM_timer=micros();
+
     robot_velocity = (l_velocity + r_velocity)/2;
-    robot_angle = imu.pitch*RAD2ANG;
+    robot_angle = imu.pitch;
     robot_angular_velocity = (l_velocity - r_velocity)/(2*len);
 
     target_velocity = velocity;
@@ -172,10 +193,8 @@ void task1(void *pvParameters)
 
     //TODO: send force
     String s=l_force_s+','+r_force_s;
-    // I2C0.beginTransmission(SLAVE_ADDR);
-    // I2C0.write(s);
-    // Wire.endTransmission();
     Serial1.println(s);
+    // vTaskDelay(1);
   }
 }
 
@@ -186,7 +205,26 @@ void task2(void *pvParameters)
 
 void task3(void *pvParameters)
 {
-  //TODO: light oled screen
+  int cnt=0;
+  unsigned long OLED_timer=micros();
+  display.clearDisplay();
+  while(true)
+  {
+    if(micros()-OLED_timer>1e6*1.f/30)
+    {      
+      String str="FPS: "+String(1e6*1.f/(micros()-OLED_timer),2)+"\n";
+      OLED_timer=micros();
+
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setTextColor(SSD1306_WHITE);
+      display.setCursor(0,0);
+      str+=getRPYStr(imu,"\n");
+      display.println(str);
+      display.display();
+    }
+    vTaskDelay(30);
+  }
 }
 
 void getWheelVel(float &l_velocity, float &r_velocity)
@@ -218,36 +256,61 @@ void getWheelVel(float &l_velocity, float &r_velocity)
   }
 }
 
-void IMUInit(TwoWire& Wire)
+void OLEDInit()
 {
-  if(!mpu.begin(0x68, &Wire))
-  {
-    Serial.println("Failed to find MPU6050 chip");
-    while(true);
-  }
-  Serial.println("MPU6050 Found!");
+  if(!display.begin(SSD1306_SWITCHCAPVCC)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }  
+  Serial.println(F("SSD1306 allocation succeed")); 
+  
+  display.clearDisplay(); // 清空屏幕
+  display.drawBitmap(32, 0, NERV, 128, 64, WHITE);
+  display.display();
+}
 
-  mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+void IMUInit()
+{
+  int status;
+
+  status = accel.begin();
+  if (status < 0) {
+    Serial.println("Accel Initialization Error"); Serial.println(status);
+    while (1) {}
+  }
+  else {
+    Serial.println("Accel Initialization Succeed");
+  }
+
+  status = gyro.begin();
+  if (status < 0) {
+    Serial.println("Gyro Initialization Error"); Serial.println(status);
+    while (1) {}
+  }
+  else {
+    Serial.println("Gyro Initialization Succeed");
+  }
 }
 
 void IMUUpdate()
 {
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+  /* read the accel */
+  accel.readSensor();
+  /* read the gyro */
+  gyro.readSensor();
 
-  axFilter.input(a.acceleration.x);
-  ayFilter.input(a.acceleration.y);
-  azFilter.input(a.acceleration.z);
+  axFilter.input(accel.getAccelX_mss());
+  ayFilter.input(accel.getAccelY_mss());
+  azFilter.input(accel.getAccelZ_mss());
 
-  gxFilter.input(g.gyro.x);
-  gyFilter.input(g.gyro.y);
-  gzFilter.input(g.gyro.z);
+  gxFilter.input(gyro.getGyroX_rads());
+  gyFilter.input(gyro.getGyroY_rads());
+  gzFilter.input(gyro.getGyroZ_rads());
 
   if ((micros() - IMU_timer >= (1e6 * 1.f) / sample_freq) || micros() < IMU_timer)
   {
-    // delta = micros() - IMU_timer ;
+    delta = micros() - IMU_timer ;
+    Serial.println(delta);
     IMU_timer = micros(); /* imu get data */
 
     ax = axFilter.output(); axFilter.reset();
