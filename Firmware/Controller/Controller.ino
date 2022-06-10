@@ -1,6 +1,6 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
-#include <IMU.h>
+// #include <IMU.h>
 #include <Filter.h>
 #include <BalanceController.h>
 
@@ -18,21 +18,16 @@ float angular_velocity = 0.f;
 
 /* I2C cfgs */
 TwoWire I2C0 = TwoWire(0);
-// TwoWire I2C1 = TwoWire(1);
-
-// #define SLAVE_ADDR (0x02)
 
 #define I2C0_SDA (38)
 #define I2C0_SCL (39)
-// #define I2C1_SDA (17)
-// #define I2C1_SCL (18)
 
 /* mpu6050 */
 Adafruit_MPU6050 mpu;
 
 /* imu vars */
 float sample_freq = 1000.f;
-IMU::IMU_6DOF imu(sample_freq, IMU::MAHONY);
+IMU::IMU_6DOF imu(sample_freq, MAHONY);
 unsigned long IMU_timer;
 
 float ax = 0.f, ay = 0.f, az = 0.f;
@@ -47,7 +42,6 @@ BalanceController::BalanceController balance_controller;
 /* function prototype declaration */
 void IMUInit(TwoWire& Wire);
 void IMUUpdate();
-void getWheelVel(const TwoWire &Wire, float &l_velocity, float &r_velocity);
 void getWheelVel(float &l_velocity, float &r_velocity);
 
 /* FreeRTOS */
@@ -79,10 +73,9 @@ void setup()
 { 
   /* USB Serial to print data */
   Serial.begin(5000000UL, SERIAL_8N1, SERIAL0_TX, SERIAL0_RX);
-  Serial1.begin(5000000UL, SERIAL_8N1, SERIAL1_TX, SERIAL1_RX)
+  Serial1.begin(5000000UL, SERIAL_8N1, SERIAL1_TX, SERIAL1_RX);
 
   I2C0.begin(I2C0_SDA, I2C0_SCL, 400000UL);
-  // I2C1.begin(I2C1_SDA, I2C1_SCL, 400000UL);
 
   /* maximize cpu frequency */
   setCpuFrequencyMhz(240);
@@ -92,10 +85,10 @@ void setup()
   IMUInit(I2C0);
 
   /* create tasks */
-  xTaskCreatePinnedToCore(task0, "Task_IMU", TASK_STACK0, NULL, TASK_PRIO0, &Task_0, CORE_0);
-  xTaskCreatePinnedToCore(task1, "Task_Controller", TASK_STACK1, NULL, TASK_PRIO1, &Task_1, CORE_1);
-  // xTaskCreatePinnedToCore(task2, "Task_Msg", TASK_STACK2, NULL, TASK_PRIO2, &Task_2, CORE_0);
-  // xTaskCreatePinnedToCore(task3, "Task_OLED", TASK_STACK3, NULL, TASK_PRIO3, &Task_3, CORE_1);
+  xTaskCreatePinnedToCore(task0, "Task_IMU", TASK_STACK0, NULL, TASK_PRIO0, &Task0, CORE_0);
+  xTaskCreatePinnedToCore(task1, "Task_Controller", TASK_STACK1, NULL, TASK_PRIO1, &Task1, CORE_1);
+  // xTaskCreatePinnedToCore(task2, "Task_Msg", TASK_STACK2, NULL, TASK_PRIO2, &Task2, CORE_0);
+  // xTaskCreatePinnedToCore(task3, "Task_OLED", TASK_STACK3, NULL, TASK_PRIO3, &Task3, CORE_1);
 }
 
 void loop(){}
@@ -126,7 +119,7 @@ void task1(void *pvParameters)
 
   String l_force_s="", r_force_s="";
 
-  uint8_t status = Status::FALL;
+  uint8_t status = FALL;
 
   while(true)
   {
@@ -138,7 +131,7 @@ void task1(void *pvParameters)
     getWheelVel(l_velocity, r_velocity);
 
     robot_velocity = (l_velocity + r_velocity)/2;
-    robot_angle = imu.pitch*IMU::RAD2ANG;
+    robot_angle = imu.pitch*RAD2ANG;
     robot_angular_velocity = (l_velocity - r_velocity)/(2*len);
 
     target_velocity = velocity;
@@ -146,16 +139,16 @@ void task1(void *pvParameters)
     
     if(robot_angle<40&&robot_angle>-40)
     {
-      status=Status::NORMAL;
+      status=NORMAL;
     }
     else 
     {
-      status=Status::FALL;
+      status=FALL;
     }
 
     switch(status)
     {
-      case Status::NORMAL:
+      case NORMAL:
       {    
         target_angle = balance_controller.velocityPID(target_velocity, robot_velocity);
         force = balance_controller.balancePID(target_angle, robot_angle);
@@ -163,7 +156,7 @@ void task1(void *pvParameters)
         r_force=force;
         break;
       }
-      case Status::FALL:
+      case FALL:
       {
         balance_controller.reset();
         force = 0.f;
@@ -287,18 +280,18 @@ void updateParam()
 
   if(param_name == "vp")
   {
-    balance_controller.updateParam(BalanceController::V_KP, param_value);
+    balance_controller.updateParam(B_KP, param_value);
   }
   else if(param_name == "vd")
   {
-    balance_controller.updateParam(BalanceController::V_KD, param_value);
+    balance_controller.updateParam(B_KD, param_value);
   }
   else if(param_name == "pp")
   {
-    balance_controller.updateParam(BalanceController::P_KP, param_value);
+    balance_controller.updateParam(V_KP, param_value);
   }
   else if(param_name == "pi")
   {
-    balance_controller.updateParam(BalanceController::P_KI, param_value);
+    balance_controller.updateParam(V_KI, param_value);
   }
 }

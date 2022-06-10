@@ -23,12 +23,16 @@ InlineCurrentSense current_sense1 = InlineCurrentSense(0.01, 50.0, 35, 34);
 TwoWire I2C0 = TwoWire(0);
 TwoWire I2C1 = TwoWire(1);
 
-// #define SLAVE_ADDR (0x02)
-
 #define I2C0_SDA (19)
 #define I2C0_SCL (18)
 #define I2C1_SDA (23)
-#define I2C2_SCL (5)
+#define I2C1_SCL (5)
+
+/* function prototype declaration */
+void MotorInit();
+void MotorRun();
+void RcvForce();
+void SendVel();
 
 /* FreeRTOS */
 #define CORE_0 (0)
@@ -45,40 +49,35 @@ TaskHandle_t Task1;
 void task0(void *pvParameters);
 void task1(void *pvParameters);
 
-/* function prototype declaration */
-void MotorInit();
-void MotorRun();
-void RcvForce();
-void SendVel();
-
 /* main function */
 void setup()
 {
   /* USB Serial to print data */
-  Serial.begin(5e6UL);
+  Serial.begin(5000000UL);
+  Serial1.begin(5000000UL, SERIAL_8N1, 17, 16);
 
   I2C0.begin(I2C0_SDA, I2C0_SCL, 400000UL);
   I2C1.begin(I2C1_SDA, I2C1_SCL, 400000UL);
 
   /* maximize cpu frequency */
   setCpuFrequencyMhz(240);
-  // Serial.println("CPU Frequency: " + String(getCpuFrequencyMhz()));
+  Serial.println("CPU Frequency: " + String(getCpuFrequencyMhz()));
 
   MotorInit();
 
   /* create tasks */
-  xTaskCreatePinnedToCore(task0, "Task_MotorRun", TASK_STACK0, NULL, TASK_PRIO0, &Task_0, CORE_0);
-  xTaskCreatePinnedToCore(task1, "Task_Msg", TASK_STACK1, NULL, TASK_PRIO1, &Task_1, CORE_1);
+  xTaskCreatePinnedToCore(task0, "Task_MotorRun", TASK_STACK0, NULL, TASK_PRIO0, &Task0, CORE_0);
+  xTaskCreatePinnedToCore(task1, "Task_Msg", TASK_STACK1, NULL, TASK_PRIO1, &Task1, CORE_1);
 }
 
 void loop(){}
 
 void task0(void *pvParameters)
 {
-    while(true)
-    {
-        MotorRun();
-    }
+  while(true)
+  {
+    MotorRun();
+  }
 }
 
 void task1(void *pvParameters)
@@ -179,13 +178,13 @@ void MotorRun()
 
 void RcvForce()
 {
-  if(Serial.available())
+  if(Serial1.available())
   {
     String s="";
 
-    while(Serial.available())
+    while(Serial1.available())
     {
-      s+=char(Serial.read());
+      s+=char(Serial1.read());
     }
 
     int cnt=0;
@@ -212,5 +211,5 @@ void SendVel()
   String l_velocity_s=String(l_velocity, 6);
   String r_velocity_s=String(r_velocity, 6);
 
-  Serial.println(l_velocity_s+','+r_velocity);
+  Serial1.println(l_velocity_s+','+r_velocity);
 }
