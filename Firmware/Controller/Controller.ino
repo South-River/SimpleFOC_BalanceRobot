@@ -13,6 +13,9 @@
 #include "Config.h"
 #include "Bitmap.h"
 
+float rc_x=0.f;
+float rc_y=0.f;
+
 float velocity = 0.f;           // m/s
 float angular_velocity = 0.f;   // rad/s
 
@@ -48,6 +51,7 @@ void OLEDInit();
 void IMUInit();
 void IMUUpdate();
 void getWheelVel(float &l_velocity, float &r_velocity);
+void updateParam();
 
 /* FreeRTOS */
 #define CORE_0 (0)
@@ -55,7 +59,7 @@ void getWheelVel(float &l_velocity, float &r_velocity);
 
 TaskHandle_t Task0;
 #define TASK_STACK0 (6*1024)
-#define TASK_PRIO0 (2)
+#define TASK_PRIO0 (4)
 
 TaskHandle_t Task1;
 #define TASK_STACK1 (6*1024)
@@ -205,25 +209,36 @@ void task2(void *pvParameters)
 
 void task3(void *pvParameters)
 {
-  int cnt=0;
+  float fps=10;
   unsigned long OLED_timer=micros();
   display.clearDisplay();
   while(true)
   {
-    if(micros()-OLED_timer>1e6*1.f/30)
+    if(micros()-OLED_timer>1e6*1.f/fps)
     {      
       String str="FPS: "+String(1e6*1.f/(micros()-OLED_timer),2)+"\n";
       OLED_timer=micros();
-
+      
       display.clearDisplay();
+      
+      display.drawRect(RC_X_COOR-RC_RADIUS, RC_Y_COOR-RC_RADIUS, 2*RC_RADIUS, 2*RC_RADIUS, SSD1306_WHITE);
+      display.drawLine(RC_X_COOR-RC_RADIUS, RC_Y_COOR, RC_X_COOR+RC_RADIUS-1, RC_Y_COOR, SSD1306_WHITE); 
+      display.drawLine(RC_X_COOR, RC_Y_COOR-RC_RADIUS, RC_X_COOR, RC_Y_COOR+RC_RADIUS-1, SSD1306_WHITE); 
+
+      float x=RC_X_COOR+(rc_x/RC_X_RANGE)*RC_RADIUS;
+      float y=RC_Y_COOR+(rc_y/RC_Y_RANGE)*RC_RADIUS;
+      display.fillCircle(x, y, 2, SSD1306_WHITE);
+      //display.drawLine(RC_X_COOR, RC_Y_COOR, x, y, SSD1306_WHITE); 
+
       display.setTextSize(1);
       display.setTextColor(SSD1306_WHITE);
       display.setCursor(0,0);
       str+=getRPYStr(imu,"\n");
       display.println(str);
+      
       display.display();
     }
-    vTaskDelay(30);
+    vTaskDelay(1000.f/fps);
   }
 }
 
@@ -265,7 +280,7 @@ void OLEDInit()
   Serial.println(F("SSD1306 allocation succeed")); 
   
   display.clearDisplay(); // 清空屏幕
-  display.drawBitmap(32, 0, NERV, 128, 64, WHITE);
+  display.drawBitmap(27, 0, ac01, 128, 64, WHITE);
   display.display();
 }
 

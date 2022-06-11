@@ -4,9 +4,9 @@ void printRPY(const IMU::IMU_6DOF &imu)
 {
   String str="";
 
-  str+=("roll: "+String(imu.roll*RAD2ANG,3)+"\t");
-  str+=("pitch: "+String(imu.pitch*RAD2ANG,3)+"\t");
-  str+=("yaw: "+String(imu.yaw*RAD2ANG,3)+"\t");
+  str+=("ROLL:  "+String(imu.roll*RAD2ANG,3)+"\t");
+  str+=("PITCH: "+String(imu.pitch*RAD2ANG,3)+"\t");
+  str+=("YAW:   "+String(imu.yaw*RAD2ANG,3)+"\t");
   
   Serial.println(str);
 }
@@ -49,9 +49,9 @@ String getRPYStr(const IMU::IMU_6DOF &imu, const String &split_label)
 {
   String str="";
 
-  str+=("roll: "+String(imu.roll*RAD2ANG,3)+split_label);
-  str+=("pitch: "+String(imu.pitch*RAD2ANG,3)+split_label);
-  str+=("yaw: "+String(imu.yaw*RAD2ANG,3)+split_label);
+  str+=("ROLL:  "+String(imu.roll*RAD2ANG,2)+split_label);
+  str+=("PITCH: "+String(imu.pitch*RAD2ANG,2)+split_label);
+  str+=("YAW:   "+String(imu.yaw*RAD2ANG,2)+split_label);
 
   return str;
 }
