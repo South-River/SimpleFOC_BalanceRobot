@@ -25,8 +25,8 @@
 #define OLED_RESET 48
 
 /* RC Circle */
-#define RC_X_COOR (112)
-#define RC_Y_COOR (16)
+#define RC_X_COOR (16)
+#define RC_Y_COOR (48)
 #define RC_RADIUS (14.f)
 
 /* RC cfgs */

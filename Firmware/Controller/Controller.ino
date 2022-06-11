@@ -3,7 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#include <BMI085.h>
+#include <BMI085.h>   
 #include <IMU.h>
 #include <Filter.h>
 #include <BalanceController.h>
@@ -29,7 +29,7 @@ BMI085Gyro gyro(hspi, HSPI_CS1);
 
 /* imu vars */
 float sample_freq = 1000.f;
-IMU::IMU_6DOF imu(sample_freq, MAHONY);
+IMU::IMU_6DOF imu(sample_freq, MADGWICK);
 unsigned long IMU_timer;
 unsigned long delta;
 
@@ -52,6 +52,7 @@ void IMUInit();
 void IMUUpdate();
 void getWheelVel(float &l_velocity, float &r_velocity);
 void updateParam();
+void angleVisual(const float& angle, const int &x, const int &y, const float &radius=14.f);
 
 /* FreeRTOS */
 #define CORE_0 (0)
@@ -230,6 +231,10 @@ void task3(void *pvParameters)
       display.fillCircle(x, y, 2, SSD1306_WHITE);
       //display.drawLine(RC_X_COOR, RC_Y_COOR, x, y, SSD1306_WHITE); 
 
+      angleVisual(imu.roll, 48, 48);
+      angleVisual(imu.pitch, 80, 48);
+      angleVisual(imu.yaw, 112, 48);
+
       display.setTextSize(1);
       display.setTextColor(SSD1306_WHITE);
       display.setCursor(0,0);
@@ -240,6 +245,18 @@ void task3(void *pvParameters)
     }
     vTaskDelay(1000.f/fps);
   }
+}
+
+void angleVisual(const float& angle, const int &x, const int &y, const float &radius)
+{
+  display.drawCircle(x, y, radius, SSD1306_WHITE);
+  display.drawLine(x-radius, y, x+radius, y, SSD1306_WHITE); 
+  display.drawLine(x, y-radius, x, y+radius, SSD1306_WHITE); 
+
+  float center_x=x+radius*cos(angle);
+  float center_y=y-radius*sin(angle);
+  display.fillCircle(center_x, center_y, 2, SSD1306_WHITE);
+  //display.drawLine(center_x, center_y, x, y, SSD1306_WHITE); 
 }
 
 void getWheelVel(float &l_velocity, float &r_velocity)
@@ -280,7 +297,7 @@ void OLEDInit()
   Serial.println(F("SSD1306 allocation succeed")); 
   
   display.clearDisplay(); // 清空屏幕
-  display.drawBitmap(27, 0, ac01, 128, 64, WHITE);
+  display.drawBitmap(27, 0, NERV, 128, 64, WHITE);
   display.display();
 }
 
