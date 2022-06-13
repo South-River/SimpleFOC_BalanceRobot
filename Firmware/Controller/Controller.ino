@@ -8,13 +8,12 @@
 #include <Filter.h>
 #include <BalanceController.h>
 
-#include "Status.h"
 #include "Output.h"
 #include "Config.h"
 #include "Bitmap.h"
 
-float rc_x=0.f;
-float rc_y=0.f;
+float rc_x=0.f;                 // remote controller x
+float rc_y=0.f;                 // remote controller y
 
 float velocity = 0.f;           // m/s
 float angular_velocity = 0.f;   // rad/s
@@ -28,7 +27,7 @@ BMI085Accel accel(hspi, HSPI_CS0);
 BMI085Gyro gyro(hspi, HSPI_CS1);
 
 /* imu vars */
-float sample_freq = 1000.f;
+float sample_freq = IMU_FREQ;
 IMU::IMU_6DOF imu(sample_freq, MADGWICK);
 unsigned long IMU_timer;
 unsigned long delta;
@@ -86,8 +85,8 @@ void setup()
   Serial1.begin(2000000UL, SERIAL_8N1, SERIAL1_TX, SERIAL1_RX);
 
   /* SPI init */
-  hspi.begin(HSPI_SCLK, HSPI_MISO, HSPI_MOSI, HSPI_CS0); //SCLK, MISO, MOSI, SS
-  hspi.begin(HSPI_SCLK, HSPI_MISO, HSPI_MOSI, HSPI_CS1); //SCLK, MISO, MOSI, SS
+  hspi.begin(HSPI_SCLK, HSPI_MISO, HSPI_MOSI, HSPI_CS0); // SCLK, MISO, MOSI, SS
+  hspi.begin(HSPI_SCLK, HSPI_MISO, HSPI_MOSI, HSPI_CS1); // SCLK, MISO, MOSI, SS
 
   /* maximize cpu frequency */
   setCpuFrequencyMhz(240);
@@ -117,6 +116,7 @@ void task0(void *pvParameters)
   {
     IMUUpdate();
     // printRPY(imu);
+    vTaskDelay(0);
   }
 }
 
@@ -124,9 +124,13 @@ void task1(void *pvParameters)
 {
   float force = 0.f;
   float l_force = 0.f, r_force = 0.f;
+
+  /* target state */
   float target_velocity = velocity;                   //m/s
   float target_angle = 0.f;                           //rad
   float target_angular_velocity = angular_velocity;   //rad/s
+  
+  /* current state */
   float robot_velocity = 0.f;
   float robot_angle = 0.f;
   float robot_angular_velocity = 0.f;
@@ -136,10 +140,10 @@ void task1(void *pvParameters)
 
   String l_force_s="", r_force_s="";
 
-  uint8_t status = FALL;
+  uint8_t state = FALL;
 
   unsigned long FSM_timer=micros();
-  int FSM_freq=1000;
+  int FSM_freq=CONTROLLER_FREQ;
 
   while(true)
   {
@@ -148,8 +152,10 @@ void task1(void *pvParameters)
       updateParam();
     }
 
-    getWheelVel(l_velocity, r_velocity);
-
+    if(Serial1.available())
+    {
+      getWheelVel(l_velocity, r_velocity);
+    }
     if((micros()-FSM_timer)<1e6*1.f/FSM_freq&&(micros()>FSM_timer))
     {
       continue;
@@ -165,14 +171,14 @@ void task1(void *pvParameters)
     
     if(robot_angle<40&&robot_angle>-40)
     {
-      status=NORMAL;
+      state=NORMAL;
     }
     else 
     {
-      status=FALL;
+      state=FALL;
     }
 
-    switch(status)
+    switch(state)
     {
       case NORMAL:
       {    
@@ -197,9 +203,10 @@ void task1(void *pvParameters)
     r_force_s=String(r_force, 6);
 
     //TODO: send force
-    String s=l_force_s+','+r_force_s;
+    String s='['+l_force_s+','+r_force_s+']';
     Serial1.println(s);
-    // vTaskDelay(1);
+    
+    vTaskDelay(0);
   }
 }
 
@@ -210,9 +217,9 @@ void task2(void *pvParameters)
 
 void task3(void *pvParameters)
 {
-  float fps=10;
+  float fps=OLED_FPS;
   unsigned long OLED_timer=micros();
-  display.clearDisplay();
+  
   while(true)
   {
     if(micros()-OLED_timer>1e6*1.f/fps)
@@ -227,9 +234,9 @@ void task3(void *pvParameters)
       display.drawLine(RC_X_COOR, RC_Y_COOR-RC_RADIUS, RC_X_COOR, RC_Y_COOR+RC_RADIUS-1, SSD1306_WHITE); 
 
       float x=RC_X_COOR+(rc_x/RC_X_RANGE)*RC_RADIUS;
-      float y=RC_Y_COOR+(rc_y/RC_Y_RANGE)*RC_RADIUS;
+      float y=RC_Y_COOR-(rc_y/RC_Y_RANGE)*RC_RADIUS;
       display.fillCircle(x, y, 2, SSD1306_WHITE);
-      //display.drawLine(RC_X_COOR, RC_Y_COOR, x, y, SSD1306_WHITE); 
+      // display.drawLine(RC_X_COOR, RC_Y_COOR, x, y, SSD1306_WHITE); 
 
       angleVisual(imu.roll, 48, 48);
       angleVisual(imu.pitch, 80, 48);
@@ -256,35 +263,27 @@ void angleVisual(const float& angle, const int &x, const int &y, const float &ra
   float center_x=x+radius*cos(angle);
   float center_y=y-radius*sin(angle);
   display.fillCircle(center_x, center_y, 2, SSD1306_WHITE);
-  //display.drawLine(center_x, center_y, x, y, SSD1306_WHITE); 
+  // display.drawLine(center_x, center_y, x, y, SSD1306_WHITE); 
 }
 
 void getWheelVel(float &l_velocity, float &r_velocity)
 {
-  if(Serial1.available())
+  String buffer="";
+
+  float tmp0=0.f;
+  float tmp1=0.f;
+
+  while(Serial1.available())
   {
-    String s="";
-    while(Serial1.available())
-    {
-      s+=char(Serial1.read());
-    }
-    
-    int cnt=0;
-    String l_vel_s="";
-    String r_vel_s="";
+    buffer+=char(Serial1.read());
+  }
 
-    while(s[cnt]!=',')
-    {
-      l_vel_s+=s[cnt++];
-    }
-    cnt++;
-    while(cnt<s.length())
-    {
-      r_vel_s+=s[cnt++];
-    }
+  int value_num=sscanf(buffer.c_str(), "[%f,%f%[^]]", &tmp0, &tmp1);
 
-    l_velocity=l_vel_s.toFloat();
-    r_velocity=r_vel_s.toFloat();
+  if(value_num==2)
+  {
+    l_velocity=tmp0;
+    r_velocity=tmp1;
   }
 }
 
@@ -292,12 +291,12 @@ void OLEDInit()
 {
   if(!display.begin(SSD1306_SWITCHCAPVCC)) {
     Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
+    while (1) {} // Don't proceed, loop forever
   }  
   Serial.println(F("SSD1306 allocation succeed")); 
   
-  display.clearDisplay(); // 清空屏幕
-  display.drawBitmap(27, 0, NERV, 128, 64, WHITE);
+  display.clearDisplay();
+  display.drawBitmap(30, 0, NERV, 128, 64, WHITE);
   display.display();
 }
 
@@ -342,7 +341,7 @@ void IMUUpdate()
   if ((micros() - IMU_timer >= (1e6 * 1.f) / sample_freq) || micros() < IMU_timer)
   {
     delta = micros() - IMU_timer ;
-    Serial.println(delta);
+    // Serial.println(delta);
     IMU_timer = micros(); /* imu get data */
 
     ax = axFilter.output(); axFilter.reset();
@@ -373,20 +372,24 @@ void updateParam()
 
   float param_value = param_value_s.toFloat();
 
-  if(param_name == "vp")
+  if(param_name == "bp")
   {
     balance_controller.updateParam(B_KP, param_value);
+    Serial.println("Balance PID Kp changed to: "+ String(param_value));
   }
-  else if(param_name == "vd")
+  else if(param_name == "bd")
   {
     balance_controller.updateParam(B_KD, param_value);
+    Serial.println("Balance PID Kd changed to: "+ String(param_value,3));
   }
-  else if(param_name == "pp")
+  else if(param_name == "vp")
   {
     balance_controller.updateParam(V_KP, param_value);
+    Serial.println("Velocity PID Kp changed to: "+ String(param_value));
   }
-  else if(param_name == "pi")
+  else if(param_name == "vi")
   {
     balance_controller.updateParam(V_KI, param_value);
+    Serial.println("Velocity PID Ki changed to: "+ String(param_value));
   }
 }

@@ -1,5 +1,7 @@
 #include <SimpleFOC.h>
 
+#include "Config.h"
+
 /* global vars */
 float l_force = 0.f;
 float r_force = 0.f;
@@ -22,11 +24,6 @@ InlineCurrentSense current_sense1 = InlineCurrentSense(0.01, 50.0, 35, 34);
 /* I2C cfgs */
 TwoWire I2C0 = TwoWire(0);
 TwoWire I2C1 = TwoWire(1);
-
-#define I2C0_SDA (19)
-#define I2C0_SCL (18)
-#define I2C1_SDA (23)
-#define I2C1_SCL (5)
 
 /* function prototype declaration */
 void MotorInit();
@@ -85,7 +82,7 @@ void task1(void *pvParameters)
   while(true)
   {
     SendVel();
-    RcvForce();
+    if(Serial1.available()) RcvForce();
   }
 }
 
@@ -178,31 +175,22 @@ void MotorRun()
 
 void RcvForce()
 {
-  if(Serial1.available())
+  String buffer="";
+
+  float tmp0=0.f;
+  float tmp1=0.f;
+
+  while(Serial.available())
   {
-    String s="";
+    buffer+=char(Serial.read());
+  }
 
-    while(Serial1.available())
-    {
-      s+=char(Serial1.read());
-    }
+  int value_num=sscanf(buffer.c_str(), "[%f,%f%[^]]", &tmp0, &tmp1);
 
-    int cnt=0;
-    String l_force_s="";
-    String r_force_s="";
-
-    while(s[cnt]!=',')
-    {
-      l_force_s+=s[cnt++];
-    }
-    cnt++;
-    while(cnt<s.length())
-    {
-      r_force_s+=s[cnt++];
-    }
-
-    l_force=l_force_s.toFloat();
-    r_force=r_force_s.toFloat();
+  if(value_num==2)
+  {
+    l_force=tmp0;
+    r_force=tmp1;
   }
 }
 
@@ -211,5 +199,5 @@ void SendVel()
   String l_velocity_s=String(l_velocity, 6);
   String r_velocity_s=String(r_velocity, 6);
 
-  Serial1.println(l_velocity_s+','+r_velocity);
+  Serial1.println('['+l_velocity_s+','+r_velocity+']');
 }
