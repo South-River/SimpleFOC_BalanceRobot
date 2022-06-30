@@ -1,0 +1,8 @@
+Filter	KEYWORD1
+MeanFilter	KEYWORD1
+FOLPF	KEYWORD1
+MovingAverageFilter	KEYWORD1
+
+input	KEYWORD2
+output	KEYWORD2
+reset	KEYWORD2

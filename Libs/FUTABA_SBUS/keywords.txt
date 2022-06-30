@@ -1,0 +1,18 @@
+FUTABA_SBUS keyword1
+
+sbusData    keyword2
+channels    keyword2
+servos      keyword2
+failsafe_status keyword2
+toChannels  keyword2
+
+channels    keyword2
+DigiChannel keyword2
+servos      keyword2
+DigiServo   keyword2
+Failsafe    keyword2
+PassthroughSet  keyword2
+PassthroughRet  keyword2
+UpdateServos    keyword2
+UpdateChannels  keyword2
+Feedline    keyword2
